@@ -1637,7 +1637,7 @@ async function startConvert() {
     width: outW,
     height: outH,
     workerScript: _workerBlobURL,
-    repeat: state.optLoop ? 0 : -1,
+    repeat: state.optLoop ? 0 : -1,         // 0 = loop forever, -1 = play once
     dither: doDither ? ditherVal : false,
     globalPalette: false,                    // per-frame palette = correct animation + accurate colors
   });
@@ -1663,21 +1663,69 @@ async function startConvert() {
   gif.on('finished', (blob) => {
     clearTimeout(encodeTimeout);
     activeGif = null;
-    const url = URL.createObjectURL(blob);
-    document.getElementById('resultGif').src = url;
-    document.getElementById('downloadBtn').href = url;
-    const infoText = `${formatBytes(blob.size)}&nbsp;&nbsp;·&nbsp;&nbsp;${effectiveFps} FPS&nbsp;&nbsp;·&nbsp;&nbsp;${timestamps.length} frames&nbsp;&nbsp;·&nbsp;&nbsp;${outW}×${outH}&nbsp;&nbsp;·&nbsp;&nbsp;${colors} colors`;
-    document.getElementById('resultInfo').innerHTML = infoText;
-    document.getElementById('resultArea').classList.add('visible');
-    // Show download button in right panel
-    const panelBtn = document.getElementById('downloadBtnPanel');
-    panelBtn.href = url;
-    panelBtn.style.display = 'block';
-    document.getElementById('resultInfoPanel').style.display = 'block';
-    document.getElementById('resultInfoPanel').innerHTML = infoText;
-    setProgress(100, `Done ✓ — ${formatBytes(blob.size)}`);
-    document.getElementById('progressText').style.color = 'var(--green)';
-    resetBtn(btn);
+
+    // ── Guarantee loop extension is correctly written in the blob ──
+    // PowerPoint and some players ignore gif.js's Netscape block.
+    // We patch it directly into the raw bytes to be certain.
+    blob.arrayBuffer().then(buf => {
+      const bytes = new Uint8Array(buf);
+      let patched = bytes;
+
+      if (state.optLoop) {
+        // Check if Netscape loop block already exists (21 FF 0B NETSCAPE2.0)
+        let hasLoop = false;
+        for (let i = 0; i < bytes.length - 16; i++) {
+          if (bytes[i] === 0x21 && bytes[i+1] === 0xFF && bytes[i+2] === 0x0B) {
+            hasLoop = true;
+            // Ensure loop count bytes are 0x00 0x00 (infinite)
+            if (bytes[i+16] !== 0x00 || bytes[i+17] !== 0x00) {
+              bytes[i+16] = 0x00;
+              bytes[i+17] = 0x00;
+            }
+            break;
+          }
+        }
+        if (!hasLoop) {
+          // Insert Netscape loop block after the 6-byte header + 7-byte LSD + palette
+          // Find first 0x2C (image descriptor) or 0x21 (extension) after header
+          const loopBlock = new Uint8Array([
+            0x21, 0xFF, 0x0B,
+            0x4E,0x45,0x54,0x53,0x43,0x41,0x50,0x45,0x32,0x2E,0x30, // NETSCAPE2.0
+            0x03, 0x01,
+            0x00, 0x00, // loop count = 0 (infinite)
+            0x00
+          ]);
+          // Find insertion point: after header (6) + LSD (7) + global palette if present
+          let insertAt = 13;
+          const hasPalette = (bytes[10] & 0x80) !== 0;
+          if (hasPalette) {
+            const palSize = 2 << (bytes[10] & 0x07);
+            insertAt += palSize * 3;
+          }
+          const newBytes = new Uint8Array(bytes.length + loopBlock.length);
+          newBytes.set(bytes.slice(0, insertAt));
+          newBytes.set(loopBlock, insertAt);
+          newBytes.set(bytes.slice(insertAt), insertAt + loopBlock.length);
+          patched = newBytes;
+        }
+      }
+
+      const finalBlob = new Blob([patched], { type: 'image/gif' });
+      const url = URL.createObjectURL(finalBlob);
+      document.getElementById('resultGif').src = url;
+      document.getElementById('downloadBtn').href = url;
+      const infoText = `${formatBytes(finalBlob.size)}&nbsp;&nbsp;·&nbsp;&nbsp;${effectiveFps} FPS&nbsp;&nbsp;·&nbsp;&nbsp;${timestamps.length} frames&nbsp;&nbsp;·&nbsp;&nbsp;${outW}×${outH}&nbsp;&nbsp;·&nbsp;&nbsp;${colors} colors`;
+      document.getElementById('resultInfo').innerHTML = infoText;
+      document.getElementById('resultArea').classList.add('visible');
+      const panelBtn = document.getElementById('downloadBtnPanel');
+      panelBtn.href = url;
+      panelBtn.style.display = 'block';
+      document.getElementById('resultInfoPanel').style.display = 'block';
+      document.getElementById('resultInfoPanel').innerHTML = infoText;
+      setProgress(100, `Done ✓ — ${formatBytes(finalBlob.size)}`);
+      stopHeartbeat();
+      resetBtn(btn);
+    });
   });
 
   gif.on('abort', () => {
