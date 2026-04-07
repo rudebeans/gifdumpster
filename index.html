@@ -546,6 +546,37 @@
 
   .out-label:first-child { margin-top: 0; }
 
+  /* Download panel button */
+  .download-btn-panel {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    box-sizing: border-box;
+  }
+  .download-btn-panel:hover {
+    background: var(--amber);
+    color: var(--bg);
+  }
+  .result-info-panel {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-align: center;
+    margin-top: 8px;
+  }
+
   /* Convert button */
   .convert-area {
     padding: 16px;
@@ -1160,14 +1191,7 @@
           <span>Every frame</span><span>Keep 1 in 4</span>
         </div>
 
-        <!-- GLOBAL PALETTE + LOOP -->
-        <div class="control-row" style="margin-bottom:10px;">
-          <div class="toggle-switch" onclick="toggleOpt('globalPalette')">
-            <div class="toggle-track on" id="track-globalPalette"><div class="toggle-thumb"></div></div>
-            <div class="control-label">Shared palette</div>
-          </div>
-          <div style="font-family:var(--mono); font-size:9px; color:var(--text-dim); margin-left:8px; line-height:1.3;">faster+smaller</div>
-        </div>
+        <!-- LOOP -->
         <div class="control-row">
           <div class="toggle-switch" onclick="toggleOpt('optLoop')">
             <div class="toggle-track on" id="track-optLoop"><div class="toggle-thumb"></div></div>
@@ -1189,6 +1213,8 @@
       </div>
       <div class="progress-text" id="progressText"></div>
       <div class="log-console" id="logConsole"></div>
+      <a class="download-btn-panel" id="downloadBtnPanel" download="output.gif" style="display:none;">▼ DOWNLOAD GIF</a>
+      <div class="result-info-panel" id="resultInfoPanel" style="display:none;"></div>
     </div>
 
   </div>
@@ -1218,7 +1244,6 @@ const state = {
   cropEnabled: false,
   reverse: false,
   optLoop: true,
-  globalPalette: true,
   rotate: '0',
   flipH: false,
   flipV: false,
@@ -1269,6 +1294,8 @@ function handleFile(file) {
   dropZone.classList.add('has-file');
   document.getElementById('trimBar').classList.add('visible');
   document.getElementById('resultArea').classList.remove('visible');
+  document.getElementById('downloadBtnPanel').style.display = 'none';
+  document.getElementById('resultInfoPanel').style.display = 'none';
   document.getElementById('convertBtn').disabled = false;
 }
 
@@ -1277,6 +1304,8 @@ function triggerReload() {
   dropZone.classList.remove('has-file');
   document.getElementById('trimBar').classList.remove('visible');
   document.getElementById('resultArea').classList.remove('visible');
+  document.getElementById('downloadBtnPanel').style.display = 'none';
+  document.getElementById('resultInfoPanel').style.display = 'none';
   document.getElementById('fileInfoStrip').classList.remove('visible');
   document.getElementById('convertBtn').disabled = true;
   document.getElementById('progressBar').classList.remove('visible');
@@ -1517,6 +1546,8 @@ async function startConvert() {
   btn.disabled = true;
   btn.innerHTML = '<span class="btn-shine"></span>PREPARING…';
   document.getElementById('resultArea').classList.remove('visible');
+  document.getElementById('downloadBtnPanel').style.display = 'none';
+  document.getElementById('resultInfoPanel').style.display = 'none';
   document.getElementById('progressText').style.color = '';
 
   const fps      = parseInt(document.getElementById('fpsSlider').value);
@@ -1608,15 +1639,13 @@ async function startConvert() {
     workerScript: _workerBlobURL,
     repeat: state.optLoop ? 0 : -1,
     dither: doDither ? ditherVal : false,
-    globalPalette: state.globalPalette,      // shared palette across frames = smaller
+    globalPalette: false,                    // per-frame palette = correct animation + accurate colors
   });
   activeGif = gif;
 
   const delay = Math.round(1000 / effectiveFps);
   for (const frame of frames) {
-    // Pre-reduce colors on canvas for lower palette settings
-    const reducedFrame = colors < 256 ? reduceColors(frame, outW, outH) : frame;
-    gif.addFrame(reducedFrame, { delay, copy: true });
+    gif.addFrame(frame, { delay, copy: true });
   }
 
   let encodeTimeout = setTimeout(() => {
@@ -1637,9 +1666,15 @@ async function startConvert() {
     const url = URL.createObjectURL(blob);
     document.getElementById('resultGif').src = url;
     document.getElementById('downloadBtn').href = url;
-    document.getElementById('resultInfo').innerHTML =
-      `${formatBytes(blob.size)}&nbsp;&nbsp;·&nbsp;&nbsp;${effectiveFps} FPS&nbsp;&nbsp;·&nbsp;&nbsp;${timestamps.length} frames&nbsp;&nbsp;·&nbsp;&nbsp;${outW}×${outH}&nbsp;&nbsp;·&nbsp;&nbsp;${colors} colors`;
+    const infoText = `${formatBytes(blob.size)}&nbsp;&nbsp;·&nbsp;&nbsp;${effectiveFps} FPS&nbsp;&nbsp;·&nbsp;&nbsp;${timestamps.length} frames&nbsp;&nbsp;·&nbsp;&nbsp;${outW}×${outH}&nbsp;&nbsp;·&nbsp;&nbsp;${colors} colors`;
+    document.getElementById('resultInfo').innerHTML = infoText;
     document.getElementById('resultArea').classList.add('visible');
+    // Show download button in right panel
+    const panelBtn = document.getElementById('downloadBtnPanel');
+    panelBtn.href = url;
+    panelBtn.style.display = 'block';
+    document.getElementById('resultInfoPanel').style.display = 'block';
+    document.getElementById('resultInfoPanel').innerHTML = infoText;
     setProgress(100, `Done ✓ — ${formatBytes(blob.size)}`);
     document.getElementById('progressText').style.color = 'var(--green)';
     resetBtn(btn);
