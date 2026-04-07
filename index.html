@@ -1275,6 +1275,9 @@ dropZone.addEventListener('drop', (e) => {
 
 function handleFile(file) {
   videoFile = file;
+  // Build output filename: strip extension, add .gif
+  const baseName = file.name.replace(/\.[^/.]+$/, '');
+  window._gifOutputName = baseName + '.gif';
   const url = URL.createObjectURL(file);
   const video = document.getElementById('preview-video');
   video.src = url;
@@ -1712,13 +1715,17 @@ async function startConvert() {
 
       const finalBlob = new Blob([patched], { type: 'image/gif' });
       const url = URL.createObjectURL(finalBlob);
+      const outName = window._gifOutputName || 'output.gif';
       document.getElementById('resultGif').src = url;
-      document.getElementById('downloadBtn').href = url;
+      const dlBtn = document.getElementById('downloadBtn');
+      dlBtn.href = url;
+      dlBtn.download = outName;
       const infoText = `${formatBytes(finalBlob.size)}&nbsp;&nbsp;·&nbsp;&nbsp;${effectiveFps} FPS&nbsp;&nbsp;·&nbsp;&nbsp;${timestamps.length} frames&nbsp;&nbsp;·&nbsp;&nbsp;${outW}×${outH}&nbsp;&nbsp;·&nbsp;&nbsp;${colors} colors`;
       document.getElementById('resultInfo').innerHTML = infoText;
       document.getElementById('resultArea').classList.add('visible');
       const panelBtn = document.getElementById('downloadBtnPanel');
       panelBtn.href = url;
+      panelBtn.download = outName;
       panelBtn.style.display = 'block';
       document.getElementById('resultInfoPanel').style.display = 'block';
       document.getElementById('resultInfoPanel').innerHTML = infoText;
